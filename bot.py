@@ -120,7 +120,7 @@ async def send_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "This intelligence does not come free. Serious members only.\n\n"
         "One time access fee: KES 300"
     )
-    await update.message.reply_text("", reply_markup=build_start_keyboard())
+    await update.message.reply_text("👇 Choose an option below to proceed:", reply_markup=build_start_keyboard())
 
 
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
