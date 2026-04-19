@@ -215,12 +215,13 @@ def payment_callback() -> object:
     logger.info("Received payment callback: %s", data)
 
     transaction_reference = (
-        data.get("transaction_reference")
+        data.get("TransactionReference")
+        or data.get("transaction_reference")
         or data.get("transactionReference")
         or data.get("reference")
     )
-    status = data.get("status") or data.get("ResultCode")
-    description = data.get("status_message") or data.get("ResultDesc") or "No description provided."
+    status = data.get("ResponseCode") if "ResponseCode" in data else (data.get("status") or data.get("ResultCode"))
+    description = data.get("ResponseDescription") or data.get("status_message") or data.get("ResultDesc") or "No description provided."
 
     if not transaction_reference or transaction_reference not in pending_payments:
         return jsonify({"success": True, "message": "Unknown transaction reference."}), 200
