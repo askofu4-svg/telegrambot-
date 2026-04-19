@@ -75,19 +75,18 @@ def normalize_phone(phone: str) -> str:
 
 
 def build_hashback_payload(phone_number: str, amount: int, chat_id: int) -> Dict[str, object]:
-    transaction_reference = f"unique-ref-{chat_id}-{int(time.time())}"
+    reference = f"ref-{chat_id}-{int(time.time())}"
     return {
-        "merchant_code": config.HASHBACK_MERCHANT_CODE,
-        "amount": amount,
-        "phone_number": phone_number,
-        "callback_url": config.HASHBACK_CALLBACK_URL,
-        "transaction_reference": transaction_reference,
+        "api_key": config.HASHBACK_API_KEY,
+        "account_id": config.HASHBACK_MERCHANT_CODE,
+        "amount": str(amount),
+        "msisdn": phone_number,
+        "reference": reference,
     }
 
 
 def request_stk_push(phone_number: str, amount: int, chat_id: int) -> Dict[str, object]:
     headers = {
-        "Authorization": f"Bearer {config.HASHBACK_API_KEY}",
         "Content-Type": "application/json",
     }
     payload = build_hashback_payload(phone_number, amount, chat_id)
