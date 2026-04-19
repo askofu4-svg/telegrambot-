@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+from queue import Queue
 from threading import Thread
 from typing import Dict, Set
 
@@ -30,6 +31,7 @@ app = Flask(__name__)
 telegram_app = None
 paid_users: Set[int] = set()
 pending_payments: Dict[str, Dict[str, object]] = {}
+message_queue: Queue = Queue()
 
 ENTER_PHONE = 1
 
@@ -233,36 +235,50 @@ def payment_callback() -> object:
 
     if str(status) == "0" or str(status).lower() == "success":
         paid_users.add(user_id)
-        success_text = (
-            "✅ Payment Confirmed!\n\n"
-            "Welcome to Kenya Political Desk Premium. You now have full lifetime access.\n\n"
-            "Tap the link below to join your exclusive channel immediately:"
-        )
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(telegram_app.bot.send_message(chat_id=chat_id, text=success_text))
-            loop.run_until_complete(telegram_app.bot.send_message(chat_id=chat_id, text=config.PREMIUM_CHANNEL_INVITE))
-        finally:
-            loop.close()
+        message_queue.put({
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "success": True,
+        })
     else:
-        failure_text = (
-            "❌ Payment was not completed. This could be due to insufficient funds, wrong PIN, or timeout."
-        )
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(
-                telegram_app.bot.send_message(
-                    chat_id=chat_id,
-                    text=failure_text,
-                    reply_markup=build_try_again_keyboard(),
-                )
-            )
-        finally:
-            loop.close()
+        message_queue.put({
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "success": False,
+        })
 
     return jsonify({"success": True}), 200
+
+
+async def process_message_queue() -> None:
+    """Process messages from Flask callback queue in the async context."""
+    while True:
+        await asyncio.sleep(1)
+        while not message_queue.empty():
+            msg = message_queue.get()
+            chat_id = msg["chat_id"]
+            user_id = msg["user_id"]
+            try:
+                if msg["success"]:
+                    paid_users.add(user_id)
+                    success_text = (
+                        "✅ Payment Confirmed!\n\n"
+                        "Welcome to Kenya Political Desk Premium. You now have full lifetime access.\n\n"
+                        "Tap the link below to join your exclusive channel immediately:"
+                    )
+                    await telegram_app.bot.send_message(chat_id=chat_id, text=success_text)
+                    await telegram_app.bot.send_message(chat_id=chat_id, text=config.PREMIUM_CHANNEL_INVITE)
+                else:
+                    failure_text = (
+                        "❌ Payment was not completed. This could be due to insufficient funds, wrong PIN, or timeout."
+                    )
+                    await telegram_app.bot.send_message(
+                        chat_id=chat_id,
+                        text=failure_text,
+                        reply_markup=build_try_again_keyboard(),
+                    )
+            except Exception as e:
+                logger.error("Failed to send message from queue: %s", e)
 
 
 def run_flask() -> None:
@@ -289,6 +305,11 @@ def main() -> None:
 
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
+
+    async def post_init(app):
+        asyncio.ensure_future(process_message_queue())
+
+    telegram_app.post_init = post_init
 
     logger.info("Starting Telegram bot polling and callback server...")
     telegram_app.run_polling(
