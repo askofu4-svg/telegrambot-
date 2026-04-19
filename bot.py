@@ -76,22 +76,18 @@ def normalize_phone(phone: str) -> str:
     )
 
 
-def build_hashback_payload(phone_number: str, amount: int, chat_id: int) -> Dict[str, object]:
-    reference = f"ref-{chat_id}-{int(time.time())}"
-    return {
+def request_stk_push_with_ref(phone_number: str, amount: int, reference: str) -> Dict[str, object]:
+    headers = {
+        "Content-Type": "application/json",
+    }
+    payload = {
         "api_key": config.HASHBACK_API_KEY,
         "account_id": config.HASHBACK_MERCHANT_CODE,
         "amount": str(amount),
         "msisdn": phone_number,
         "reference": reference,
     }
-
-
-def request_stk_push(phone_number: str, amount: int, chat_id: int) -> Dict[str, object]:
-    headers = {
-        "Content-Type": "application/json",
-    }
-    payload = build_hashback_payload(phone_number, amount, chat_id)
+    logger.info("Sending STK push payload: %s", payload)
     response = requests.post(
         config.HASHBACK_API_URL, json=payload, headers=headers, timeout=30
     )
@@ -181,27 +177,28 @@ async def enter_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         "⏳ STK Push sent to your number. Please check your phone and enter your M-Pesa PIN to complete payment."
     )
 
+    # Generate our own reference before sending
+    our_reference = f"ref-{update.effective_chat.id}-{int(time.time())}"
+
+    # Store BEFORE sending STK push so we never miss the callback
+    pending_payments[our_reference] = {
+        "chat_id": update.effective_chat.id,
+        "user_id": update.effective_user.id,
+        "amount": amount,
+        "phone_number": phone_number,
+    }
+    logger.info("Stored pending payment with reference: %s", our_reference)
+
     try:
-        result = request_stk_push(phone_number, amount, update.effective_chat.id)
+        result = request_stk_push_with_ref(phone_number, amount, our_reference)
+        logger.info("STK Push result: %s", result)
     except Exception as exc:
         logger.error("STK Push request failed: %s", exc, exc_info=True)
+        pending_payments.pop(our_reference, None)
         await update.message.reply_text(
             "Sorry, the payment request could not be sent. Please try again later."
         )
         return ConversationHandler.END
-
-    transaction_reference = (
-        result.get("transaction_reference")
-        or result.get("transactionReference")
-        or result.get("reference")
-    )
-    if transaction_reference:
-        pending_payments[transaction_reference] = {
-            "chat_id": update.effective_chat.id,
-            "user_id": update.effective_user.id,
-            "amount": amount,
-            "phone_number": phone_number,
-        }
 
     return ConversationHandler.END
 
