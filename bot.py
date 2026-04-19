@@ -238,20 +238,29 @@ def payment_callback() -> object:
             "Welcome to Kenya Political Desk Premium. You now have full lifetime access.\n\n"
             "Tap the link below to join your exclusive channel immediately:"
         )
-        # Use asyncio to safely call async send_message from sync Flask route
-        asyncio.run(telegram_app.bot.send_message(chat_id=chat_id, text=success_text))
-        asyncio.run(telegram_app.bot.send_message(chat_id=chat_id, text=config.PREMIUM_CHANNEL_INVITE))
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(telegram_app.bot.send_message(chat_id=chat_id, text=success_text))
+            loop.run_until_complete(telegram_app.bot.send_message(chat_id=chat_id, text=config.PREMIUM_CHANNEL_INVITE))
+        finally:
+            loop.close()
     else:
         failure_text = (
             "❌ Payment was not completed. This could be due to insufficient funds, wrong PIN, or timeout."
         )
-        asyncio.run(
-            telegram_app.bot.send_message(
-                chat_id=chat_id,
-                text=failure_text,
-                reply_markup=build_try_again_keyboard(),
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(
+                telegram_app.bot.send_message(
+                    chat_id=chat_id,
+                    text=failure_text,
+                    reply_markup=build_try_again_keyboard(),
+                )
             )
-        )
+        finally:
+            loop.close()
 
     return jsonify({"success": True}), 200
 
@@ -282,7 +291,10 @@ def main() -> None:
     flask_thread.start()
 
     logger.info("Starting Telegram bot polling and callback server...")
-    telegram_app.run_polling()
+    telegram_app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+    )
 
 
 if __name__ == "__main__":
