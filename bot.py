@@ -285,7 +285,7 @@ def run_flask() -> None:
     app.run(host="0.0.0.0", port=5000, debug=False)
 
 
-def main() -> None:
+async def start_bot() -> None:
     config.validate_environment()
 
     global telegram_app
@@ -306,16 +306,22 @@ def main() -> None:
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    async def post_init(app):
-        asyncio.ensure_future(process_message_queue())
-
-    telegram_app.post_init = post_init
+    # Start queue processor in same event loop
+    asyncio.ensure_future(process_message_queue())
 
     logger.info("Starting Telegram bot polling and callback server...")
-    telegram_app.run_polling(
+    await telegram_app.initialize()
+    await telegram_app.start()
+    await telegram_app.updater.start_polling(
         drop_pending_updates=True,
         allowed_updates=Update.ALL_TYPES,
     )
+    # Keep running forever
+    await asyncio.Event().wait()
+
+
+def main() -> None:
+    asyncio.run(start_bot())
 
 
 if __name__ == "__main__":
